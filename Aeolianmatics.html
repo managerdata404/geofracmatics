@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>3D Eolian Cymatics</title>
+    <style>
+        body { margin: 0; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        select, button {
+            margin: 5px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <select id="patternType">
+            <option value="barchan">Barchan Dune</option>
+            <option value="star">Star Dune</option>
+            <option value="linear">Linear Dune</option>
+            <option value="parabolic">Parabolic Dune</option>
+        </select>
+        <select id="frequency">
+            <option value="low">Low Frequency</option>
+            <option value="medium">Medium Frequency</option>
+            <option value="high">High Frequency</option>
+        </select>
+        <button id="toggleWind">Toggle Wind</button>
+        <button id="resetSimulation">Reset</button>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, particles;
+        let windActive = false;
+        const GRID_SIZE = 100;
+        const PARTICLE_COUNT = 50000;
+        const CELL_SIZE = 1; // Size of each grid cell for density calculation
+        
+        // Store initial positions for reset
+        let initialPositions;
+        let densityGrid = {};
+
+        // Initialize the scene
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Add lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            directionalLight.position.set(1, 1, 1);
+            scene.add(directionalLight);
+
+            // Create ground plane
+            const groundGeometry = new THREE.PlaneGeometry(100, 100, GRID_SIZE - 1, GRID_SIZE - 1);
+            const groundMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xd2b48c,
+                wireframe: true
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.rotation.x = -Math.PI / 2;
+            scene.add(ground);
+
+            // Initialize particles
+            initParticles();
+
+            camera.position.set(50, 50, 50);
+            camera.lookAt(0, 0, 0);
+        }
+
+        // Create sand particles
+        function initParticles() {
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+            // Store initial positions for reset
+            initialPositions = new Float32Array(PARTICLE_COUNT * 3);
+
+            for (let i = 0; i < PARTICLE_COUNT * 3; i += 3) {
+                // Random position within bounds
+                const x = (Math.random() - 0.5) * 100;
+                const y = Math.random() * 20;
+                const z = (Math.random() - 0.5) * 100;
+
+                positions[i] = x;
+                positions[i + 1] = y;
+                positions[i + 2] = z;
+
+                // Store initial positions
+                initialPositions[i] = x;
+                initialPositions[i + 1] = y;
+                initialPositions[i + 2] = z;
+
+                // Initial sand color
+                colors[i] = 0.824;
+                colors[i + 1] = 0.706;
+                colors[i + 2] = 0.549;
+            }
+
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const material = new THREE.PointsMaterial({
+                size: 0.2,
+                vertexColors: true,
+            });
+
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+
+        // Calculate particle density in grid cells
+        function updateDensityGrid() {
+            densityGrid = {};
+            const positions = particles.geometry.attributes.position.array;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = Math.floor(positions[i] / CELL_SIZE);
+                const z = Math.floor(positions[i + 2] / CELL_SIZE);
+                const key = `${x},${z}`;
+                
+                if (!densityGrid[key]) {
+                    densityGrid[key] = 1;
+                } else {
+                    densityGrid[key]++;
+                }
+            }
+
+            // Update particle colors based on density
+            const colors = particles.geometry.attributes.color.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = Math.floor(positions[i] / CELL_SIZE);
+                const z = Math.floor(positions[i + 2] / CELL_SIZE);
+                const key = `${x},${z}`;
+                const density = densityGrid[key] || 1;
+                
+                // Darken color based on density
+                const darkening = Math.max(0.3, 1 - (density * 0.05));
+                colors[i] = 0.824 * darkening;
+                colors[i + 1] = 0.706 * darkening;
+                colors[i + 2] = 0.549 * darkening;
+            }
+
+            particles.geometry.attributes.color.needsUpdate = true;
+        }
+
+        // Update particle positions based on pattern type and frequency
+        function updateParticles(deltaTime) {
+            const positions = particles.geometry.attributes.position.array;
+            const patternType = document.getElementById('patternType').value;
+            const frequency = document.getElementById('frequency').value;
+
+            if (!windActive) return;
+
+            const freqMultiplier = {
+                'low': 0.5,
+                'medium': 1,
+                'high': 2
+            }[frequency];
+
+            for (let i = 0; i < positions.length; i += 3) {
+                switch(patternType) {
+                    case 'barchan':
+                        // Create crescent-shaped dune
+                        positions[i] += Math.sin(positions[i+2] * 0.1) * 0.1 * freqMultiplier;
+                        break;
+                    case 'star':
+                        // Create star-shaped dune with multiple arms
+                        const angle = Math.atan2(positions[i+2], positions[i]);
+                        positions[i] += Math.sin(angle * 3) * 0.1 * freqMultiplier;
+                        positions[i+2] += Math.cos(angle * 3) * 0.1 * freqMultiplier;
+                        break;
+                    case 'linear':
+                        // Create parallel ridges
+                        positions[i] += Math.sin(positions[i] * 0.1) * 0.1 * freqMultiplier;
+                        break;
+                    case 'parabolic':
+                        // Create U-shaped dune
+                        const dist = Math.sqrt(positions[i]**2 + positions[i+2]**2);
+                        positions[i] += (positions[i] / dist) * 0.1 * freqMultiplier;
+                        positions[i+2] += (positions[i+2] / dist) * 0.1 * freqMultiplier;
+                        break;
+                }
+
+                // Apply gravity and boundary conditions
+                positions[i + 1] -= 0.1; // Gravity
+                if (positions[i + 1] < 0) positions[i + 1] = 0;
+
+                // Keep particles within bounds
+                positions[i] = Math.max(-50, Math.min(50, positions[i]));
+                positions[i + 2] = Math.max(-50, Math.min(50, positions[i + 2]));
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            updateDensityGrid();
+        }
+
+        // Reset simulation to initial state
+        function resetSimulation() {
+            windActive = false;
+            const positions = particles.geometry.attributes.position.array;
+            const colors = particles.geometry.attributes.color.array;
+
+            // Reset positions to initial state
+            for (let i = 0; i < positions.length; i += 3) {
+                positions[i] = initialPositions[i];
+                positions[i + 1] = initialPositions[i + 1];
+                positions[i + 2] = initialPositions[i + 2];
+
+                // Reset colors to initial state
+                colors[i] = 0.824;
+                colors[i + 1] = 0.706;
+                colors[i + 2] = 0.549;
+            }
+
+            particles.geometry.attributes.position.needsUpdate = true;
+            particles.geometry.attributes.color.needsUpdate = true;
+            densityGrid = {};
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            updateParticles(0.016); // Assuming 60fps
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Event listeners
+        document.getElementById('toggleWind').addEventListener('click', () => {
+            windActive = !windActive;
+        });
+
+        document.getElementById('resetSimulation').addEventListener('click', resetSimulation);
+
+        // Initialize and start animation
+        init();
+        animate();
+    </script>
+</body>
+</html>
