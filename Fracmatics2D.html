@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fractal Cymatics HSV Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden; 
+            background-color: black;
+        }
+        #controls {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div>
+            <label>Frequency: <span id="frequencyValue">50</span></label>
+            <input type="range" id="frequencySlider" min="10" max="200" value="50">
+        </div>
+        <div>
+            <label>Complexity: <span id="complexityValue">3</span></label>
+            <input type="range" id="complexitySlider" min="1" max="10" value="3">
+        </div>
+        <div>
+            <label>Wave Type:</label>
+            <select id="waveTypeSelector">
+                <option value="sine">Sine Wave</option>
+                <option value="square">Square Wave</option>
+                <option value="triangle">Triangle Wave</option>
+            </select>
+        </div>
+    </div>
+    <script>
+        // HSV Color Conversion Utilities
+        class ColorUtils {
+            // RGB to HSV conversion
+            static rgbToHsv(r, g, b) {
+                r /= 255, g /= 255, b /= 255;
+                const max = Math.max(r, g, b), min = Math.min(r, g, b);
+                let h, s, v = max;
+
+                const d = max - min;
+                s = max === 0 ? 0 : d / max;
+
+                if (max === min) {
+                    h = 0; // achromatic
+                } else {
+                    switch (max) {
+                        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                        case g: h = (b - r) / d + 2; break;
+                        case b: h = (r - g) / d + 4; break;
+                    }
+                    h /= 6;
+                }
+
+                return [h, s, v];
+            }
+
+            // HSV to RGB conversion
+            static hsvToRgb(h, s, v) {
+                const i = Math.floor(h * 6);
+                const f = h * 6 - i;
+                const p = v * (1 - s);
+                const q = v * (1 - f * s);
+                const t = v * (1 - (1 - f) * s);
+
+                switch (i % 6) {
+                    case 0: return [v, t, p];
+                    case 1: return [q, v, p];
+                    case 2: return [p, v, t];
+                    case 3: return [p, q, v];
+                    case 4: return [t, p, v];
+                    case 5: return [v, p, q];
+                }
+            }
+
+            // HSV Blending with dynamic saturation and value
+            static blendHSV(iterations, maxIterations) {
+                // Normalize iterations
+                const normalizedIterations = iterations / maxIterations;
+
+                // Dynamic Hue Mapping
+                const hue = normalizedIterations;
+                
+                // Dynamic Saturation (more vibrant at mid-iterations)
+                const saturation = Math.sin(normalizedIterations * Math.PI);
+                
+                // Dynamic Value (brightness) with exponential falloff
+                const value = Math.pow(1 - normalizedIterations, 0.5);
+
+                // Convert HSV to RGB
+                const [r, g, b] = this.hsvToRgb(hue, saturation, value);
+                
+                return [r, g, b];
+            }
+        }
+
+        // Advanced Fractal Cymatics Simulation
+        class FractalCymaticsSimulation {
+            constructor(scene, width, height) {
+                this.scene = scene;
+                this.width = width;
+                this.height = height;
+                this.complexity = 3;
+                this.frequency = 50;
+                this.waveType = 'sine';
+                this.fractals = [];
+            }
+
+            generateFractalPattern() {
+                // Clear previous fractals
+                this.fractals.forEach(fractal => this.scene.remove(fractal));
+                this.fractals = [];
+
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const colors = [];
+
+                const maxIterations = this.complexity * 50;
+                const scale = 2 * Math.PI / this.frequency;
+
+                for (let x = 0; x < this.width; x += 5) {
+                    for (let y = 0; y < this.height; y += 5) {
+                        let zValue = this.calculateWaveInterference(x, y, scale);
+                        
+                        // Transform wave into fractal-like pattern
+                        let fractalValue = this.transformToFractalPattern(x, y, zValue);
+                        
+                        positions.push(
+                            (x - this.width/2) * 0.01, 
+                            (y - this.height/2) * 0.01, 
+                            fractalValue * 0.1
+                        );
+
+                        // HSV Color Blending
+                        const [r, g, b] = ColorUtils.blendHSV(fractalValue, maxIterations);
+                        colors.push(r, g, b);
+                    }
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                const material = new THREE.PointsMaterial({
+                    size: 0.05,
+                    vertexColors: true,
+                    blending: THREE.AdditiveBlending
+                });
+
+                const fractalMesh = new THREE.Points(geometry, material);
+                this.scene.add(fractalMesh);
+                this.fractals.push(fractalMesh);
+            }
+
+            calculateWaveInterference(x, y, scale) {
+                let zValue = 0;
+                
+                // Multiple wave sources with different phases
+                const sources = [
+                    { x: this.width/4, y: this.height/4 },
+                    { x: 3*this.width/4, y: this.height/4 },
+                    { x: this.width/2, y: 3*this.height/4 }
+                ];
+
+                sources.forEach(source => {
+                    const distance = Math.sqrt(
+                        Math.pow(x - source.x, 2) + 
+                        Math.pow(y - source.y, 2)
+                    );
+
+                    // Wave generation based on selected wave type
+                    switch(this.waveType) {
+                        case 'sine':
+                            zValue += Math.sin(distance * scale) * Math.sin(Date.now() * 0.001);
+                            break;
+                        case 'square':
+                            zValue += Math.sign(Math.sin(distance * scale)) * Math.sin(Date.now() * 0.001);
+                            break;
+                        case 'triangle':
+                            zValue += 2 * Math.abs(distance * scale % 2 - 1) - 1;
+                            break;
+                    }
+                });
+
+                return zValue;
+            }
+
+            transformToFractalPattern(x, y, zValue) {
+                // Mandelbrot-like transformation
+                let zx = x / (this.width/4) - 2;
+                let zy = y / (this.height/4) - 2;
+                
+                let iteration = 0;
+                const maxIterations = this.complexity * 50;
+                
+                while (zx * zx + zy * zy < 4 && iteration < maxIterations) {
+                    const xtemp = zx * zx - zy * zy + zValue;
+                    zy = 2 * zx * zy + zValue;
+                    zx = xtemp;
+                    iteration++;
+                }
+                
+                return iteration;
+            }
+        }
+
+        // Three.js Setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        camera.position.z = 5;
+
+        // Fractal Cymatics Simulation
+        const simulation = new FractalCymaticsSimulation(scene, window.innerWidth, window.innerHeight);
+
+        // Controls
+        document.getElementById('frequencySlider').addEventListener('input', (e) => {
+            simulation.frequency = parseInt(e.target.value);
+            document.getElementById('frequencyValue').textContent = simulation.frequency;
+            simulation.generateFractalPattern();
+        });
+
+        document.getElementById('complexitySlider').addEventListener('input', (e) => {
+            simulation.complexity = parseInt(e.target.value);
+            document.getElementById('complexityValue').textContent = simulation.complexity;
+            simulation.generateFractalPattern();
+        });
+
+        document.getElementById('waveTypeSelector').addEventListener('change', (e) => {
+            simulation.waveType = e.target.value;
+            simulation.generateFractalPattern();
+        });
+
+        // Animate
+        function animate() {
+            requestAnimationFrame(animate);
+            simulation.generateFractalPattern();
+            renderer.render(scene, camera);
+        }
+
+        // Initial generation
+        simulation.generateFractalPattern();
+        animate();
+
+        // Responsive resize
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            simulation.width = window.innerWidth;
+            simulation.height = window.innerHeight;
+        });
+    </script>
+</body>
+</html>
