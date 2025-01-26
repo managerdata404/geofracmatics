@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Seismic Cymatics: Boundary Interaction</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            touch-action: none;
+            overflow: hidden;
+            background-color: #1a1a2e;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            z-index: 10;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            margin: 5px;
+            color: white;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control-group">
+            <label>Wave Frequency</label>
+            <input type="range" id="frequencySlider" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label>Wave Amplitude</label>
+            <input type="range" id="amplitudeSlider" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label>Boundary Rigidity</label>
+            <input type="range" id="rigiditySlider" min="0" max="100" value="75">
+        </div>
+        <div class="control-group">
+            <label>Geological Context</label>
+            <select id="contextSelect">
+                <option value="sedimentary">Sedimentary Basin</option>
+                <option value="fault">Fault Zone</option>
+                <option value="fold">Folded Strata</option>
+            </select>
+        </div>
+    </div>
+    <canvas id="simulation-canvas"></canvas>
+    <script>
+        class SeismicCymaticsBoundarySimulation {
+            constructor() {
+                this.canvas = document.getElementById('simulation-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width = window.innerWidth;
+                this.height = this.canvas.height = window.innerHeight;
+
+                // Simulation parameters
+                this.frequency = 50;
+                this.amplitude = 50;
+                this.rigidity = 75;
+                this.context = 'sedimentary';
+
+                // Particle grid
+                this.gridSize = 75;
+                this.particles = [];
+                this.wallPosition = this.width * 0.75; // Wall at 3/4 of width
+
+                this.initParticles();
+
+                // Time and animation
+                this.time = 0;
+                this.animationFrame = null;
+
+                // Setup event listeners
+                this.setupEventListeners();
+
+                // Start animation
+                this.animate();
+            }
+
+            initParticles() {
+                this.particles = [];
+                for (let x = 0; x < this.gridSize; x++) {
+                    this.particles[x] = [];
+                    for (let y = 0; y < this.gridSize; y++) {
+                        // Initialize particles with geological context-based positioning
+                        let particle = {
+                            x: x * (this.wallPosition / this.gridSize),
+                            y: y * (this.height / this.gridSize),
+                            baseY: y * (this.height / this.gridSize),
+                            baseX: x * (this.wallPosition / this.gridSize),
+                            color: this.getParticleColor(x, y),
+                            reflection: 0 // New property for boundary interaction
+                        };
+
+                        // Apply initial geological deformation based on context
+                        this.applyGeologicalContext(particle, x, y);
+
+                        this.particles[x][y] = particle;
+                    }
+                }
+            }
+
+            getParticleColor(x, y) {
+                // Color based on geological context with added boundary interaction visualization
+                switch(this.context) {
+                    case 'sedimentary':
+                        return `hsl(${x * 3}, 70%, ${50 + Math.sin(y) * 20}%)`;
+                    case 'fault':
+                        return `hsl(${180 + x * 3}, 70%, ${50 + Math.cos(y) * 20}%)`;
+                    case 'fold':
+                        return `hsl(${270 + x * 3}, 70%, ${50 + Math.tan(y) * 20}%)`;
+                }
+            }
+
+            applyGeologicalContext(particle, x, y) {
+                switch(this.context) {
+                    case 'sedimentary':
+                        // Gentle wave-like deposition
+                        particle.baseY += Math.sin(x * 0.1) * 30;
+                        break;
+                    case 'fault':
+                        // Offset and displacement
+                        if (x > this.gridSize / 2) {
+                            particle.baseY += (x - this.gridSize / 2);
+                        }
+                        break;
+                    case 'fold':
+                        // Anticline-like folding
+                        particle.baseY += Math.sin((x - this.gridSize / 2) * 0.2) * 50;
+                        break;
+                }
+            }
+
+            updateParticles() {
+                for (let x = 0; x < this.gridSize; x++) {
+                    for (let y = 0; y < this.gridSize; y++) {
+                        let particle = this.particles[x][y];
+                        
+                        // Wave propagation with boundary interaction
+                        let waveIntensity = Math.sin(
+                            particle.x * 0.01 + 
+                            this.time * (this.frequency / 100)
+                        ) * this.amplitude;
+
+                        // Boundary reflection mechanism
+                        if (particle.x > this.wallPosition * 0.9) {
+                            // Near wall, apply reflection based on rigidity
+                            particle.reflection = -waveIntensity * (this.rigidity / 100);
+                        } else {
+                            particle.reflection *= 0.9; // Dampen reflection
+                        }
+
+                        // Combine base position with wave and reflection effects
+                        particle.y = particle.baseY + 
+                            waveIntensity + 
+                            particle.reflection;
+                    }
+                }
+            }
+
+            drawParticles() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                // Draw rigid wall
+                this.ctx.fillStyle = 'rgba(100,100,100,0.5)';
+                this.ctx.fillRect(this.wallPosition, 0, this.width - this.wallPosition, this.height);
+
+                // Draw particles
+                for (let x = 0; x < this.gridSize; x++) {
+                    for (let y = 0; y < this.gridSize; y++) {
+                        let particle = this.particles[x][y];
+                        
+                        this.ctx.beginPath();
+                        this.ctx.fillStyle = particle.color;
+                        this.ctx.globalAlpha = 0.7;
+                        this.ctx.arc(
+                            particle.x, 
+                            particle.y, 
+                            2, // Particle size
+                            0, 
+                            Math.PI * 2
+                        );
+                        this.ctx.fill();
+                    }
+                }
+            }
+
+            animate() {
+                this.time += 0.1;
+                this.updateParticles();
+                this.drawParticles();
+                this.animationFrame = requestAnimationFrame(() => this.animate());
+            }
+
+            setupEventListeners() {
+                // Frequency control
+                document.getElementById('frequencySlider').addEventListener('input', (e) => {
+                    this.frequency = e.target.value;
+                });
+
+                // Amplitude control
+                document.getElementById('amplitudeSlider').addEventListener('input', (e) => {
+                    this.amplitude = e.target.value;
+                });
+
+                // Rigidity control
+                document.getElementById('rigiditySlider').addEventListener('input', (e) => {
+                    this.rigidity = e.target.value;
+                });
+
+                // Geological context control
+                document.getElementById('contextSelect').addEventListener('change', (e) => {
+                    this.context = e.target.value;
+                    this.initParticles();
+                });
+
+                // Responsive canvas
+                window.addEventListener('resize', () => {
+                    this.width = this.canvas.width = window.innerWidth;
+                    this.height = this.canvas.height = window.innerHeight;
+                    this.wallPosition = this.width * 0.75;
+                    this.initParticles();
+                });
+            }
+        }
+
+        // Initialize simulation on load
+        window.addEventListener('load', () => {
+            new SeismicCymaticsBoundarySimulation();
+        });
+    </script>
+</body>
+</html>
