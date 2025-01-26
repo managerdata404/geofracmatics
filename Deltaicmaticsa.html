@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Delta Cymatics Flow</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #controls {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px;
+            border-radius: 15px;
+            width: 80%;
+            max-width: 400px;
+            font-family: Arial;
+            z-index: 100;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 10px;
+            background: #2196F3;
+            border: none;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+        }
+        button.active {
+            background: #0D47A1;
+        }
+        .slider {
+            width: 100%;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="btn-group">
+            <button onclick="setDeltaType('fluvial')" id="fluvialBtn">Fluvial</button>
+            <button onclick="setDeltaType('wave')" id="waveBtn">Wave</button>
+            <button onclick="setDeltaType('tidal')" id="tidalBtn">Tidal</button>
+        </div>
+        <input type="range" id="speed" class="slider" min="1" max="100" value="50">
+        <input type="range" id="intensity" class="slider" min="1" max="100" value="50">
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, particles, water;
+        let deltaType = 'fluvial';
+        let time = 0;
+        const PARTICLE_COUNT = 2000;
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+
+            // Water surface
+            const waterGeometry = new THREE.PlaneGeometry(30, 30, 64, 64);
+            const waterMaterial = new THREE.MeshPhongMaterial({
+                color: 0x0088ff,
+                transparent: true,
+                opacity: 0.6,
+                shininess: 90,
+                side: THREE.DoubleSide
+            });
+            water = new THREE.Mesh(waterGeometry, waterMaterial);
+            water.rotation.x = -Math.PI / 2;
+            scene.add(water);
+
+            // Particle system
+            const particleGeo = new THREE.BufferGeometry();
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            const colors = new Float32Array(PARTICLE_COUNT * 3);
+            
+            for(let i = 0; i < PARTICLE_COUNT * 3; i += 3) {
+                positions[i] = (Math.random() - 0.5) * 30;
+                positions[i + 1] = Math.random() * 5;
+                positions[i + 2] = (Math.random() - 0.5) * 30;
+                
+                colors[i] = 0.5 + Math.random() * 0.5;
+                colors[i + 1] = 0.5 + Math.random() * 0.5;
+                colors[i + 2] = 1.0;
+            }
+            
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 0.15,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            particles = new THREE.Points(particleGeo, particleMaterial);
+            scene.add(particles);
+
+            camera.position.set(0, 20, 30);
+            camera.lookAt(0, 0, 0);
+
+            setupTouchControls();
+            window.addEventListener('resize', onWindowResize);
+        }
+
+        function setDeltaType(type) {
+            deltaType = type;
+            document.querySelectorAll('button').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`${type}Btn`).classList.add('active');
+        }
+
+        function getFluvialPattern(x, z, t, intensity) {
+            return {
+                y: Math.sin(x * 0.3 + t) * Math.cos(z * 0.3 + t) * intensity,
+                vx: Math.cos(x * 0.3 + t) * intensity * 0.5,
+                vz: -Math.sin(z * 0.3 + t) * intensity * 0.5
+            };
+        }
+
+        function getWavePattern(x, z, t, intensity) {
+            return {
+                y: Math.sin(z * 0.5 + t) * intensity,
+                vx: 0,
+                vz: Math.cos(z * 0.5 + t) * intensity
+            };
+        }
+
+        function getTidalPattern(x, z, t, intensity) {
+            return {
+                y: Math.sin(x * 0.4 + t) * Math.sin(z * 0.4 + t * 2) * intensity,
+                vx: Math.cos(x * 0.4 + t) * intensity * 0.3,
+                vz: Math.cos(z * 0.4 + t * 2) * intensity * 0.3
+            };
+        }
+
+        function updateWaterSurface() {
+            const positions = water.geometry.attributes.position.array;
+            const intensity = document.getElementById('intensity').value / 25;
+            
+            for(let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const z = positions[i + 2];
+                let pattern;
+                
+                switch(deltaType) {
+                    case 'fluvial':
+                        pattern = getFluvialPattern(x, z, time, intensity);
+                        break;
+                    case 'wave':
+                        pattern = getWavePattern(x, z, time, intensity);
+                        break;
+                    case 'tidal':
+                        pattern = getTidalPattern(x, z, time, intensity);
+                        break;
+                }
+                
+                positions[i + 1] = pattern.y;
+            }
+            
+            water.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function updateParticles() {
+            const positions = particles.geometry.attributes.position.array;
+            const intensity = document.getElementById('intensity').value / 50;
+            
+            for(let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const y = positions[i + 1];
+                const z = positions[i + 2];
+                let pattern;
+                
+                switch(deltaType) {
+                    case 'fluvial':
+                        pattern = getFluvialPattern(x, z, time, intensity);
+                        break;
+                    case 'wave':
+                        pattern = getWavePattern(x, z, time, intensity);
+                        break;
+                    case 'tidal':
+                        pattern = getTidalPattern(x, z, time, intensity);
+                        break;
+                }
+
+                positions[i] += pattern.vx * 0.1;
+                positions[i + 1] = pattern.y + 1;
+                positions[i + 2] += pattern.vz * 0.1;
+
+                // Reset particles that go out of bounds
+                if (Math.abs(positions[i]) > 15 || Math.abs(positions[i + 2]) > 15) {
+                    positions[i] = (Math.random() - 0.5) * 30;
+                    positions[i + 1] = Math.random() * 5;
+                    positions[i + 2] = (Math.random() - 0.5) * 30;
+                }
+            }
+            
+            particles.geometry.attributes.position.needsUpdate = true;
+        }
+
+        function setupTouchControls() {
+            let touchStart = { x: 0, y: 0 };
+            let cameraAngle = 0;
+            
+            document.addEventListener('touchstart', (e) => {
+                touchStart.x = e.touches[0].clientX;
+                touchStart.y = e.touches[0].clientY;
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                const deltaX = (e.touches[0].clientX - touchStart.x) * 0.01;
+                const deltaY = (e.touches[0].clientY - touchStart.y) * 0.05;
+
+                cameraAngle += deltaX;
+                
+                const radius = Math.sqrt(camera.position.x ** 2 + camera.position.z ** 2);
+                camera.position.x = Math.sin(cameraAngle) * radius;
+                camera.position.z = Math.cos(cameraAngle) * radius;
+                camera.position.y = Math.max(5, Math.min(40, camera.position.y - deltaY));
+                
+                camera.lookAt(0, 0, 0);
+                
+                touchStart.x = e.touches[0].clientX;
+                touchStart.y = e.touches[0].clientY;
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const speed = document.getElementById('speed').value / 1000;
+            time += speed;
+            
+            updateWaterSurface();
+            updateParticles();
+            
+            renderer.render(scene, camera);
+        }
+
+        init();
+        setDeltaType('fluvial');
+        animate();
+    </script>
+</body>
+</html>
