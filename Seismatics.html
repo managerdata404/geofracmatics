@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Advanced Seismic Cymatics Simulation</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            touch-action: none;
+            overflow: hidden;
+            background-color: #1a1a2e;
+            color: #white;
+            font-family: Arial, sans-serif;
+        }
+        #controls {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            z-index: 10;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            margin: 5px;
+            color: white;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <div class="control-group">
+            <label>Wave Frequency</label>
+            <input type="range" id="frequencySlider" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label>Wave Amplitude</label>
+            <input type="range" id="amplitudeSlider" min="0" max="100" value="50">
+        </div>
+        <div class="control-group">
+            <label>Wave Direction</label>
+            <select id="directionSelect">
+                <option value="xy">XY Plane</option>
+                <option value="xz">XZ Plane</option>
+                <option value="yz">YZ Plane</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Geological Context</label>
+            <select id="contextSelect">
+                <option value="sedimentary">Sedimentary Basin</option>
+                <option value="fault">Fault Zone</option>
+                <option value="fold">Folded Strata</option>
+            </select>
+        </div>
+    </div>
+    <canvas id="simulation-canvas"></canvas>
+    <script>
+        class SeismicCymaticSimulation {
+            constructor() {
+                this.canvas = document.getElementById('simulation-canvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.width = this.canvas.width = window.innerWidth;
+                this.height = this.canvas.height = window.innerHeight;
+
+                // Simulation parameters
+                this.frequency = 50;
+                this.amplitude = 50;
+                this.direction = 'xy';
+                this.context = 'sedimentary';
+
+                // Particle grid
+                this.gridSize = 50;
+                this.particles = [];
+                this.initParticles();
+
+                // Time and animation
+                this.time = 0;
+                this.animationFrame = null;
+
+                // Setup event listeners
+                this.setupEventListeners();
+
+                // Start animation
+                this.animate();
+            }
+
+            initParticles() {
+                this.particles = [];
+                for (let x = 0; x < this.gridSize; x++) {
+                    this.particles[x] = [];
+                    for (let y = 0; y < this.gridSize; y++) {
+                        // Initialize particles with geological context-based positioning
+                        let particle = {
+                            x: x * (this.width / this.gridSize),
+                            y: y * (this.height / this.gridSize),
+                            baseY: y * (this.height / this.gridSize),
+                            baseX: x * (this.width / this.gridSize),
+                            color: this.getParticleColor(x, y)
+                        };
+
+                        // Apply initial geological deformation based on context
+                        this.applyGeologicalContext(particle, x, y);
+
+                        this.particles[x][y] = particle;
+                    }
+                }
+            }
+
+            getParticleColor(x, y) {
+                // Color based on geological context
+                switch(this.context) {
+                    case 'sedimentary':
+                        return `hsl(${x * 2}, 50%, ${50 + Math.sin(y) * 20}%)`;
+                    case 'fault':
+                        return `hsl(${180 + x * 2}, 50%, ${50 + Math.cos(y) * 20}%)`;
+                    case 'fold':
+                        return `hsl(${270 + x * 2}, 50%, ${50 + Math.tan(y) * 20}%)`;
+                }
+            }
+
+            applyGeologicalContext(particle, x, y) {
+                switch(this.context) {
+                    case 'sedimentary':
+                        // Gentle wave-like deposition
+                        particle.baseY += Math.sin(x * 0.1) * 50;
+                        break;
+                    case 'fault':
+                        // Offset and displacement
+                        if (x > this.gridSize / 2) {
+                            particle.baseY += (x - this.gridSize / 2) * 2;
+                        }
+                        break;
+                    case 'fold':
+                        // Anticline-like folding
+                        particle.baseY += Math.sin((x - this.gridSize / 2) * 0.2) * 100;
+                        break;
+                }
+            }
+
+            updateParticles() {
+                for (let x = 0; x < this.gridSize; x++) {
+                    for (let y = 0; y < this.gridSize; y++) {
+                        let particle = this.particles[x][y];
+                        
+                        // Wave propagation based on frequency and amplitude
+                        let waveIntensity = Math.sin(
+                            (this.direction === 'xy' ? particle.x : particle.y) * 0.01 + 
+                            this.time * (this.frequency / 100)
+                        ) * this.amplitude;
+
+                        // Combine base position with wave effect
+                        particle.y = particle.baseY + waveIntensity;
+                        particle.x = particle.baseX + 
+                            (this.direction === 'xy' ? waveIntensity : 0);
+                    }
+                }
+            }
+
+            drawParticles() {
+                this.ctx.clearRect(0, 0, this.width, this.height);
+                
+                for (let x = 0; x < this.gridSize; x++) {
+                    for (let y = 0; y < this.gridSize; y++) {
+                        let particle = this.particles[x][y];
+                        
+                        this.ctx.beginPath();
+                        this.ctx.fillStyle = particle.color;
+                        this.ctx.globalAlpha = 0.7;
+                        this.ctx.arc(
+                            particle.x, 
+                            particle.y, 
+                            2, // Particle size
+                            0, 
+                            Math.PI * 2
+                        );
+                        this.ctx.fill();
+                    }
+                }
+            }
+
+            animate() {
+                this.time += 0.1;
+                this.updateParticles();
+                this.drawParticles();
+                this.animationFrame = requestAnimationFrame(() => this.animate());
+            }
+
+            setupEventListeners() {
+                // Frequency control
+                document.getElementById('frequencySlider').addEventListener('input', (e) => {
+                    this.frequency = e.target.value;
+                });
+
+                // Amplitude control
+                document.getElementById('amplitudeSlider').addEventListener('input', (e) => {
+                    this.amplitude = e.target.value;
+                });
+
+                // Direction control
+                document.getElementById('directionSelect').addEventListener('change', (e) => {
+                    this.direction = e.target.value;
+                });
+
+                // Geological context control
+                document.getElementById('contextSelect').addEventListener('change', (e) => {
+                    this.context = e.target.value;
+                    this.initParticles();
+                });
+
+                // Responsive canvas
+                window.addEventListener('resize', () => {
+                    this.width = this.canvas.width = window.innerWidth;
+                    this.height = this.canvas.height = window.innerHeight;
+                    this.initParticles();
+                });
+            }
+        }
+
+        // Initialize simulation on load
+        window.addEventListener('load', () => {
+            new SeismicCymaticSimulation();
+        });
+    </script>
+</body>
+</html>
