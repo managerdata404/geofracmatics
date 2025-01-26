@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Cymatics Fractal Dynamics</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background-color: #0a0a1e;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        #controlPanel {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 100;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            margin: 5px;
+        }
+        .control-group label {
+            margin-right: 10px;
+            white-space: nowrap;
+        }
+        #particleInfo {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        select, button {
+            margin: 0 5px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div id="particleInfo">
+        Simulation Status: <span id="simulationStatus">Ready</span><br>
+        Total Particles: <span id="particleCount">900</span><br>
+        Active Patterns: <span id="activePatterns">Not Started</span>
+    </div>
+    <div id="controlPanel">
+        <div class="control-group">
+            <label>Fractal Algorithm:</label>
+            <select id="fractalSelect">
+                <option value="mandelbrot">Mandelbrot Set</option>
+                <option value="julia">Julia Set</option>
+                <option value="koch">Koch Snowflake</option>
+                <option value="sierpinski">Sierpinski Triangle</option>
+                <option value="lyapunov">Lyapunov Fractal</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Cymatics Wave:</label>
+            <select id="waveTypeSelect">
+                <option value="sine">Sine Wave</option>
+                <option value="chladni">Chladni Plate</option>
+                <option value="resonance">Resonance Pattern</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <button id="startStopBtn">Start Simulation</button>
+            <button id="resetBtn">Reset</button>
+        </div>
+    </div>
+    <script>
+    class CymaticsFractalSimulation {
+        constructor() {
+            // Scene setup
+            this.scene = new THREE.Scene();
+            this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            this.renderer = new THREE.WebGLRenderer({ antialias: true });
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(this.renderer.domElement);
+
+            // Simulation constants
+            this.TOTAL_PARTICLES = 900;
+            this.PARTICLES_PER_COLOR = 300;
+            this.boxSize = { width: 100, height: 80, depth: 100 };
+            
+            // Simulation state
+            this.isRunning = false;
+            this.currentFractal = 'mandelbrot';
+            this.currentWave = 'sine';
+            
+            this.setupScene();
+            this.createBoundingBox();
+            this.setupControls();
+            this.setupEventListeners();
+            
+            // Initial particle creation
+            this.createInitialParticles();
+        }
+
+        setupScene() {
+            // Camera positioning
+            this.camera.position.set(0, 50, 200);
+            this.camera.lookAt(0, 0, 0);
+
+            // Ambient lighting
+            const ambientLight = new THREE.AmbientLight(0x404040);
+            this.scene.add(ambientLight);
+        }
+
+        createBoundingBox() {
+            const geometry = new THREE.BoxGeometry(
+                this.boxSize.width, 
+                this.boxSize.height, 
+                this.boxSize.depth
+            );
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x2c3e50, 
+                wireframe: true, 
+                transparent: true, 
+                opacity: 0.3 
+            });
+            this.boxMesh = new THREE.Mesh(geometry, material);
+            this.scene.add(this.boxMesh);
+        }
+
+        createInitialParticles() {
+            const particlesGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(this.TOTAL_PARTICLES * 3);
+            const colors = new Float32Array(this.TOTAL_PARTICLES * 3);
+            const velocities = new Float32Array(this.TOTAL_PARTICLES * 3);
+
+            // Distribute particles in rows with specific colors
+            for (let i = 0; i < this.TOTAL_PARTICLES; i++) {
+                // Divide particles into three rows
+                const rowIndex = Math.floor(i / this.PARTICLES_PER_COLOR);
+                const positionInRow = i % this.PARTICLES_PER_COLOR;
+
+                // Calculate positions in a grid-like layout
+                positions[i*3] = (positionInRow - this.PARTICLES_PER_COLOR/2) * (this.boxSize.width / this.PARTICLES_PER_COLOR);
+                positions[i*3+1] = (rowIndex - 1) * (this.boxSize.height / 3);
+                positions[i*3+2] = Math.random() * this.boxSize.depth - this.boxSize.depth/2;
+
+                // Color assignment
+                switch(rowIndex) {
+                    case 0: // Red row
+                        colors[i*3] = 1;
+                        colors[i*3+1] = 0;
+                        colors[i*3+2] = 0;
+                        break;
+                    case 1: // Green row
+                        colors[i*3] = 0;
+                        colors[i*3+1] = 1;
+                        colors[i*3+2] = 0;
+                        break;
+                    case 2: // Blue row
+                        colors[i*3] = 0;
+                        colors[i*3+1] = 0;
+                        colors[i*3+2] = 1;
+                        break;
+                }
+
+                // Initial velocities
+                velocities[i*3] = 0;
+                velocities[i*3+1] = 0;
+                velocities[i*3+2] = 0;
+            }
+
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particlesGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+            const particlesMaterial = new THREE.PointsMaterial({
+                size: 2,
+                vertexColors: true,
+                blending: THREE.AdditiveBlending
+            });
+
+            this.particleSystem = new THREE.Points(particlesGeometry, particlesMaterial);
+            this.scene.add(this.particleSystem);
+
+            // Store particle data
+            this.particlePositions = positions;
+            this.particleColors = colors;
+            this.particleVelocities = velocities;
+
+            // Update UI
+            document.getElementById('particleCount').textContent = this.TOTAL_PARTICLES;
+            document.getElementById('simulationStatus').textContent = 'Ready';
+        }
+
+        setupControls() {
+            const startStopBtn = document.getElementById('startStopBtn');
+            const resetBtn = document.getElementById('resetBtn');
+            const fractalSelect = document.getElementById('fractalSelect');
+            const waveTypeSelect = document.getElementById('waveTypeSelect');
+
+            startStopBtn.addEventListener('click', () => this.toggleSimulation());
+            resetBtn.addEventListener('click', () => this.resetSimulation());
+            
+            fractalSelect.addEventListener('change', (e) => {
+                this.currentFractal = e.target.value;
+            });
+
+            waveTypeSelect.addEventListener('change', (e) => {
+                this.currentWave = e.target.value;
+            });
+        }
+
+        toggleSimulation() {
+            this.isRunning = !this.isRunning;
+            const startStopBtn = document.getElementById('startStopBtn');
+            const simulationStatus = document.getElementById('simulationStatus');
+
+            if (this.isRunning) {
+                startStopBtn.textContent = 'Stop Simulation';
+                simulationStatus.textContent = 'Running';
+                this.animate();
+            } else {
+                startStopBtn.textContent = 'Start Simulation';
+                simulationStatus.textContent = 'Paused';
+            }
+        }
+
+        resetSimulation() {
+            // Reset to initial state
+            this.isRunning = false;
+            document.getElementById('startStopBtn').textContent = 'Start Simulation';
+            document.getElementById('simulationStatus').textContent = 'Ready';
+            
+            // Remove existing particle system
+            if (this.particleSystem) {
+                this.scene.remove(this.particleSystem);
+            }
+
+            // Recreate initial particles
+            this.createInitialParticles();
+        }
+
+        updateParticles() {
+            if (!this.isRunning) return;
+
+            const positions = this.particleSystem.geometry.attributes.position.array;
+            const colors = this.particleSystem.geometry.attributes.color.array;
+            const velocities = this.particleVelocities;
+
+            for (let i = 0; i < positions.length; i += 3) {
+                // Apply wave-based dynamics based on current wave type
+                switch(this.currentWave) {
+                    case 'sine':
+                        velocities[i] += Math.sin(positions[i] * 0.1) * 0.2;
+                        velocities[i+1] += Math.cos(positions[i+1] * 0.1) * 0.2;
+                        break;
+                    case 'chladni':
+                        velocities[i] += Math.tan(positions[i] * 0.05) * 0.1;
+                        velocities[i+1] += Math.abs(Math.sin(positions[i+1] * 0.05)) * 0.1;
+                        break;
+                    case 'resonance':
+                        velocities[i] += Math.sin(positions[i] * 0.2) * 0.3;
+                        velocities[i+1] += Math.cos(positions[i+1] * 0.2) * 0.3;
+                        break;
+                }
+
+                // Update positions
+                positions[i] += velocities[i];
+                positions[i+1] += velocities[i+1];
+                positions[i+2] += velocities[i+2];
+
+                // Boundary collision with RGB blending at collision points
+                if (Math.abs(positions[i]) > this.boxSize.width/2) {
+                    velocities[i] *= -0.9;
+                    positions[i] = Math.sign(positions[i]) * (this.boxSize.width/2);
+                    
+                    // RGB blending at boundaries
+                    this.applyRGBBlending(i, colors);
+                }
+                if (Math.abs(positions[i+1]) > this.boxSize.height/2) {
+                    velocities[i+1] *= -0.9;
+                    positions[i+1] = Math.sign(positions[i+1]) * (this.boxSize.height/2);
+                    
+                    // RGB blending at boundaries
+                    this.applyRGBBlending(i, colors);
+                }
+                if (Math.abs(positions[i+2]) > this.boxSize.depth/2) {
+                    velocities[i+2] *= -0.9;
+                    positions[i+2] = Math.sign(positions[i+2]) * (this.boxSize.depth/2);
+                    
+                    // RGB blending at boundaries
+                    this.applyRGBBlending(i, colors);
+                }
+            }
+
+            // Update particle system
+            this.particleSystem.geometry.attributes.position.needsUpdate = true;
+            this.particleSystem.geometry.attributes.color.needsUpdate = true;
+
+            // Update UI
+            document.getElementById('activePatterns').textContent = `${this.currentFractal} - ${this.currentWave}`;
+        }
+
+        applyRGBBlending(index, colors) {
+            // Simple RGB blending when particles are close
+            const blendRadius = 2;
+            for (let j = 0; j < this.TOTAL_PARTICLES; j++) {
+                const dx = Math.abs(this.particlePositions[index] - this.particlePositions[j*3]);
+                const dy = Math.abs(this.particlePositions[index+1] - this.particlePositions[j*3+1]);
+                const dz = Math.abs(this.particlePositions[index+2] - this.particlePositions[j*3+2]);
+
+                if (dx < blendRadius && dy < blendRadius && dz < blendRadius) {
+                    // Blend colors
+                    colors[index] = Math.min(1, colors[index] + colors[j*3]);
+                    colors[index+1] = Math.min(1, colors[index+1] + colors[j*3+1]);
+                    colors[index+2] = Math.min(1, colors[index+2] + colors[j*3+2]);
+                }
+            }
+        }
+
+        animate() {
+            requestAnimationFrame(() => this.animate());
+            this.updateParticles();
+            this.renderer.render(this.scene, this.camera);
+        }
+
+        setupEventListeners() {
+            // Touch and drag camera rotation
+            let touchStartX = 0, touchStartY = 0;
+            document.addEventListener('touchstart', (e) => {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            });
+
+            document.addEventListener('touchmove', (e) => {
+                const deltaX = e.touches[0].clientX - touchStartX;
+                const deltaY = e.touches[0].clientY - touchStartY;
+                
+                this.camera.rotation.y += deltaX * 0.01;
+                this.camera.rotation.x += deltaY * 0.01;
+                
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            });
+        }
+    }
+
+    // Initialize simulation on page load
+    window.addEventListener('load', () => {
+        const simulation = new CymaticsFractalSimulation();
+    });
+    </script>
+</body>
+</html>
