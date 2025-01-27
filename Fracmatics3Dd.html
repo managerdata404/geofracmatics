@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Cymatics Fractal Simulation</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial;
+            font-size: 14px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        select, button {
+            margin: 5px;
+            padding: 5px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <select id="cymaticsAlgo">
+            <option value="standing">Standing Wave</option>
+            <option value="radial">Radial Pulse</option>
+            <option value="spiral">Spiral Vortex</option>
+            <option value="harmonic">Harmonic Convergence</option>
+        </select>
+        <br>
+        <select id="fractalAlgo">
+            <option value="mandelbrot">Mandelbrot Set</option>
+            <option value="julia">Julia Set</option>
+            <option value="koch">Koch Snowflake</option>
+            <option value="sierpinski">Sierpinski Triangle</option>
+        </select>
+        <br>
+        <button id="startStop">Start Simulation</button>
+        <br>
+        <button id="resetParticles">Reset Particles</button>
+        <br>
+        <button id="viewMode">Toggle View</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer, particles = [];
+        let isAnimating = false;
+        let viewFromTop = false;
+        let initialParticlePositions = [];
+        
+        const BOX_SIZE = 10;
+        const HALF_BOX = BOX_SIZE / 2;
+        const PARTICLE_COUNT = 1000;
+        const BOX_BOUNDS = {
+            minX: -HALF_BOX + 0.1,
+            maxX: HALF_BOX - 0.1,
+            minY: -HALF_BOX + 0.1,
+            maxY: HALF_BOX - 0.1,
+            minZ: -HALF_BOX + 0.1,
+            maxZ: HALF_BOX - 0.1
+        };
+
+        function init() {
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            camera.position.z = 15;
+            camera.position.y = 5;
+
+            const boxGeometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+            const edges = new THREE.EdgesGeometry(boxGeometry);
+            const box = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+            scene.add(box);
+
+            createParticleLayers();
+
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const pointLight = new THREE.PointLight(0xffffff, 1);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+
+            window.addEventListener('resize', onWindowResize, false);
+            setupTouchControls();
+            setupUIControls();
+        }
+
+        function generateInitialPositions(layerY) {
+            const positions = new Float32Array(PARTICLE_COUNT * 3);
+            for(let i = 0; i < positions.length; i += 3) {
+                positions[i] = (Math.random() - 0.5) * (BOX_SIZE - 1);     // X
+                positions[i + 1] = layerY;                                  // Y
+                positions[i + 2] = (Math.random() - 0.5) * (BOX_SIZE - 1); // Z
+            }
+            return positions;
+        }
+
+        function createParticleLayers() {
+            const colors = [0xff0000, 0x00ff00, 0x0000ff];
+            const layerPositions = [-2, 0, 2];
+            
+            particles = [];
+            initialParticlePositions = [];
+            
+            colors.forEach((color, index) => {
+                const geometry = new THREE.BufferGeometry();
+                const positions = generateInitialPositions(layerPositions[index]);
+                
+                // Store initial positions for reset
+                initialParticlePositions[index] = positions.slice();
+                
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                const material = new THREE.PointsMaterial({
+                    color: color,
+                    size: 0.05,
+                    transparent: true,
+                    opacity: 0.8,
+                    blending: THREE.AdditiveBlending
+                });
+
+                const particleSystem = new THREE.Points(geometry, material);
+                particles.push(particleSystem);
+                scene.add(particleSystem);
+            });
+        }
+
+        function resetParticlesToInitial() {
+            particles.forEach((particleSystem, index) => {
+                const positions = particleSystem.geometry.attributes.position.array;
+                for(let i = 0; i < positions.length; i++) {
+                    positions[i] = initialParticlePositions[index][i];
+                }
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+            });
+        }
+
+        function constrainPosition(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function updateParticles(time) {
+            const cymaticsAlgo = document.getElementById('cymaticsAlgo').value;
+            const fractalAlgo = document.getElementById('fractalAlgo').value;
+
+            particles.forEach((particleSystem, layerIndex) => {
+                const positions = particleSystem.geometry.attributes.position.array;
+                const baseY = [-2, 0, 2][layerIndex];
+
+                for(let i = 0; i < positions.length; i += 3) {
+                    let x = positions[i];
+                    let y = positions[i + 1];
+                    let z = positions[i + 2];
+
+                    // Apply cymatics algorithm
+                    let displacement = 0;
+                    switch(cymaticsAlgo) {
+                        case 'standing':
+                            displacement = Math.sin(x * 0.5 + time * 0.001) * Math.cos(z * 0.5);
+                            break;
+                        case 'radial':
+                            const dist = Math.sqrt(x * x + z * z);
+                            displacement = Math.sin(dist - time * 0.001);
+                            break;
+                        case 'spiral':
+                            const angle = Math.atan2(z, x);
+                            displacement = Math.sin(angle * 3 + time * 0.001);
+                            break;
+                        case 'harmonic':
+                            displacement = Math.sin(x * 0.5 + time * 0.001) * Math.sin(z * 0.5 + time * 0.002);
+                            break;
+                    }
+
+                    // Apply fractal algorithm
+                    let fractalEffect = 0;
+                    switch(fractalAlgo) {
+                        case 'mandelbrot':
+                            fractalEffect = Math.sin(x * z * 0.1 + time * 0.001);
+                            break;
+                        case 'julia':
+                            fractalEffect = Math.cos(x * 0.5) * Math.sin(z * 0.5 + time * 0.001);
+                            break;
+                        case 'koch':
+                            fractalEffect = Math.sin(x * 3) * Math.cos(z * 3 + time * 0.001);
+                            break;
+                        case 'sierpinski':
+                            fractalEffect = Math.sin(x * z + time * 0.001) * Math.cos(x + z);
+                            break;
+                    }
+
+                    const dampingFactor = 0.1;
+                    x += Math.sin(time * 0.001 + x) * dampingFactor;
+                    y = baseY + (displacement + fractalEffect) * dampingFactor;
+                    z += Math.cos(time * 0.001 + z) * dampingFactor;
+
+                    positions[i] = constrainPosition(x, BOX_BOUNDS.minX, BOX_BOUNDS.maxX);
+                    positions[i + 1] = constrainPosition(y, BOX_BOUNDS.minY, BOX_BOUNDS.maxY);
+                    positions[i + 2] = constrainPosition(z, BOX_BOUNDS.minZ, BOX_BOUNDS.maxZ);
+                }
+
+                particleSystem.geometry.attributes.position.needsUpdate = true;
+            });
+        }
+
+        function setupTouchControls() {
+            let touchX, touchY;
+            let isRotating = false;
+
+            renderer.domElement.addEventListener('touchstart', (e) => {
+                const touch = e.touches[0];
+                touchX = touch.clientX;
+                touchY = touch.clientY;
+                isRotating = true;
+            });
+
+            renderer.domElement.addEventListener('touchmove', (e) => {
+                if (!isRotating) return;
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchX;
+                const deltaY = touch.clientY - touchY;
+
+                camera.position.x += deltaX * 0.01;
+                camera.position.y += deltaY * 0.01;
+                camera.lookAt(scene.position);
+
+                touchX = touch.clientX;
+                touchY = touch.clientY;
+            });
+
+            renderer.domElement.addEventListener('touchend', () => {
+                isRotating = false;
+            });
+        }
+
+        function setupUIControls() {
+            document.getElementById('startStop').addEventListener('click', () => {
+                isAnimating = !isAnimating;
+                document.getElementById('startStop').textContent = 
+                    isAnimating ? 'Stop Simulation' : 'Start Simulation';
+            });
+
+            document.getElementById('resetParticles').addEventListener('click', () => {
+                resetParticlesToInitial();
+            });
+
+            document.getElementById('viewMode').addEventListener('click', () => {
+                viewFromTop = !viewFromTop;
+                if (viewFromTop) {
+                    camera.position.set(0, 15, 0);
+                    camera.lookAt(0, 0, 0);
+                } else {
+                    camera.position.set(0, 5, 15);
+                    camera.lookAt(0, 0, 0);
+                }
+            });
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate(time) {
+            requestAnimationFrame(animate);
+            if (isAnimating) {
+                updateParticles(time);
+            }
+            renderer.render(scene, camera);
+        }
+
+        init();
+        animate(0);
+    </script>
+</body>
+</html>
