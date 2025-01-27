@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Cymatics Fractal Simulation</title>
+    <!-- Load dependencies with error handling -->
+    <script>
+        // Error handling for script loading
+        window.onerror = function(msg, url, lineNo, columnNo, error) {
+            console.error('Error: ' + msg + '\nURL: ' + url + '\nLine: ' + lineNo + '\nColumn: ' + columnNo + '\nError object: ' + JSON.stringify(error));
+            alert('Loading error occurred. Please check console for details.');
+            return false;
+        };
+    </script>
+    <!-- Load Three.js from latest stable version -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.159.0/three.min.js"></script>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000;
+        }
+        #controls {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 100;
+        }
+        select, button {
+            margin: 5px;
+            padding: 8px;
+            width: 200px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            border-radius: 4px;
+        }
+        #info {
+            position: fixed;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: Arial, sans-serif;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Loading simulation...</div>
+    <div id="controls">
+        <select id="cymaticsAlgo">
+            <option value="standing">Standing Wave</option>
+            <option value="radial">Radial Pulse</option>
+            <option value="spiral">Spiral Vortex</option>
+            <option value="harmonic">Harmonic Convergence</option>
+        </select>
+        <select id="fractalAlgo">
+            <option value="mandelbrot">Mandelbrot Set</option>
+            <option value="julia">Julia Set</option>
+            <option value="koch">Koch Snowflake</option>
+            <option value="sierpinski">Sierpinski Triangle</option>
+        </select>
+        <button id="startStop">Start Simulation</button>
+        <button id="viewMode">Toggle View</button>
+    </div>
+    <div id="info">FPS: <span id="fps">0</span></div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, particles;
+        let isSimulating = false;
+        let lastTime = performance.now();
+        let frameCount = 0;
+
+        // Show loading indicator
+        document.getElementById('loading').style.display = 'block';
+
+        // Initialize Three.js scene with error handling
+        async function init() {
+            try {
+                // Create scene
+                scene = new THREE.Scene();
+                
+                // Create camera
+                camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+                camera.position.z = 15;
+
+                // Create renderer
+                renderer = new THREE.WebGLRenderer({ 
+                    antialias: true,
+                    alpha: true
+                });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+                document.body.appendChild(renderer.domElement);
+
+                // Add lights
+                const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+                scene.add(ambientLight);
+                
+                const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                directionalLight.position.set(0, 1, 1);
+                scene.add(directionalLight);
+
+                // Create box
+                const boxGeometry = new THREE.BoxGeometry(10, 10, 10);
+                const boxMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x808080,
+                    wireframe: true,
+                    transparent: true,
+                    opacity: 0.3
+                });
+                const box = new THREE.Mesh(boxGeometry, boxMaterial);
+                scene.add(box);
+
+                // Create particles
+                await createParticles();
+
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+
+                // Start animation loop
+                animate();
+            } catch (error) {
+                console.error('Initialization error:', error);
+                alert('Failed to initialize simulation. Please check console for details.');
+            }
+        }
+
+        // Create particle system with error handling
+        async function createParticles() {
+            try {
+                const geometry = new THREE.BufferGeometry();
+                const positions = [];
+                const colors = [];
+                const particleCount = 5000; // Reduced for better performance
+
+                for(let i = 0; i < particleCount; i++) {
+                    positions.push(
+                        (Math.random() - 0.5) * 8,
+                        (Math.random() - 0.5) * 8,
+                        (Math.random() - 0.5) * 8
+                    );
+
+                    const y = positions[positions.length - 2];
+                    if(y < -3) {
+                        colors.push(1, 0, 0); // Red layer
+                    } else if(y < 0) {
+                        colors.push(0, 1, 0); // Green layer
+                    } else {
+                        colors.push(0, 0, 1); // Blue layer
+                    }
+                }
+
+                geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+                const material = new THREE.PointsMaterial({
+                    size: 0.08,
+                    vertexColors: true,
+                    transparent: true,
+                    opacity: 0.8
+                });
+
+                particles = new THREE.Points(geometry, material);
+                scene.add(particles);
+            } catch (error) {
+                console.error('Particle creation error:', error);
+                throw error;
+            }
+        }
+
+        // Cymatics algorithm with error handling
+        function applyCymaticsAlgo(positions, algo, time) {
+            try {
+                const frequency = 1.5;
+                const amplitude = 0.05;
+
+                for(let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i];
+                    const y = positions[i + 1];
+                    const z = positions[i + 2];
+
+                    switch(algo) {
+                        case 'standing':
+                            positions[i + 1] += Math.sin(x * frequency + time) * amplitude;
+                            break;
+                        case 'radial':
+                            const distance = Math.sqrt(x * x + z * z);
+                            positions[i + 1] += Math.sin(distance - time) * amplitude;
+                            break;
+                        case 'spiral':
+                            const angle = Math.atan2(z, x);
+                            const dist = Math.sqrt(x * x + z * z);
+                            positions[i + 1] += Math.sin(angle + dist + time) * amplitude;
+                            break;
+                        case 'harmonic':
+                            positions[i + 1] += (Math.sin(x * frequency + time) + 
+                                              Math.sin(z * frequency + time)) * amplitude;
+                            break;
+                    }
+                }
+            } catch (error) {
+                console.error('Cymatics algorithm error:', error);
+            }
+        }
+
+        // Fractal algorithm with error handling
+        function applyFractalAlgo(positions, algo, time) {
+            try {
+                for(let i = 0; i < positions.length; i += 3) {
+                    const x = positions[i];
+                    const y = positions[i + 1];
+                    const z = positions[i + 2];
+
+                    switch(algo) {
+                        case 'mandelbrot':
+                            if(Math.pow(x, 2) + Math.pow(z, 2) > 4) {
+                                positions[i] *= 0.995;
+                                positions[i + 2] *= 0.995;
+                            }
+                            break;
+                        case 'julia':
+                            const theta = Math.atan2(z, x) + time * 0.05;
+                            const r = Math.sqrt(x * x + z * z);
+                            positions[i] = r * Math.cos(theta);
+                            positions[i + 2] = r * Math.sin(theta);
+                            break;
+                        case 'koch':
+                            if((i/3) % 4 === 0) {
+                                positions[i] += Math.sin(time) * 0.005;
+                                positions[i + 2] += Math.cos(time) * 0.005;
+                            }
+                            break;
+                        case 'sierpinski':
+                            if((Math.abs(x) + Math.abs(z)) % 1 < 0.1) {
+                                positions[i + 1] += Math.sin(time) * 0.005;
+                            }
+                            break;
+                    }
+                }
+            } catch (error) {
+                console.error('Fractal algorithm error:', error);
+            }
+        }
+
+        // Animation loop with error handling
+        function animate() {
+            try {
+                requestAnimationFrame(animate);
+
+                if(isSimulating && particles) {
+                    const positions = particles.geometry.attributes.position.array;
+                    const time = performance.now() * 0.001;
+
+                    applyCymaticsAlgo(positions, document.getElementById('cymaticsAlgo').value, time);
+                    applyFractalAlgo(positions, document.getElementById('fractalAlgo').value, time);
+
+                    particles.geometry.attributes.position.needsUpdate = true;
+                }
+
+                // Gentle rotation
+                if(scene) {
+                    scene.rotation.y += 0.0005;
+                }
+
+                renderer.render(scene, camera);
+
+                // Update FPS
+                frameCount++;
+                const currentTime = performance.now();
+                if(currentTime > lastTime + 1000) {
+                    document.getElementById('fps').textContent = 
+                        Math.round(frameCount * 1000 / (currentTime - lastTime));
+                    frameCount = 0;
+                    lastTime = currentTime;
+                }
+            } catch (error) {
+                console.error('Animation error:', error);
+            }
+        }
+
+        // Event listeners
+        window.addEventListener('resize', () => {
+            try {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            } catch (error) {
+                console.error('Resize error:', error);
+            }
+        });
+
+        // Touch controls
+        let touchX, touchY;
+        
+        document.addEventListener('touchstart', (e) => {
+            const touch = e.touches[0];
+            touchX = touch.clientX;
+            touchY = touch.clientY;
+        });
+
+        document.addEventListener('touchmove', (e) => {
+            try {
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - touchX;
+                const deltaY = touch.clientY - touchY;
+                
+                scene.rotation.y += deltaX * 0.005;
+                scene.rotation.x += deltaY * 0.005;
+                
+                touchX = touch.clientX;
+                touchY = touch.clientY;
+            } catch (error) {
+                console.error('Touch control error:', error);
+            }
+        });
+
+        // Button controls
+        document.getElementById('startStop').addEventListener('click', () => {
+            isSimulating = !isSimulating;
+            document.getElementById('startStop').textContent = 
+                isSimulating ? 'Stop Simulation' : 'Start Simulation';
+        });
+
+        document.getElementById('viewMode').addEventListener('click', () => {
+            try {
+                if(camera.position.y === 0) {
+                    camera.position.set(0, 15, 0);
+                    camera.lookAt(0, 0, 0);
+                } else {
+                    camera.position.set(0, 0, 15);
+                    camera.lookAt(0, 0, 0);
+                }
+            } catch (error) {
+                console.error('View mode error:', error);
+            }
+        });
+
+        // Start initialization
+        init().catch(error => {
+            console.error('Fatal error:', error);
+            alert('Failed to start simulation. Please refresh the page.');
+        });
+    </script>
+</body>
+</html>
