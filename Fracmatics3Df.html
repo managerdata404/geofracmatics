@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Cymatics Fractal Simulation</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            max-width: 200px;
+            transition: transform 0.3s ease;
+        }
+        #controls.hidden {
+            transform: translateX(-220px);
+        }
+        select, button {
+            width: 100%;
+            margin: 5px 0;
+            padding: 5px;
+            background: #444;
+            color: white;
+            border: 1px solid #666;
+            border-radius: 3px;
+        }
+        button:active {
+            background: #555;
+        }
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 5px;
+            border-radius: 3px;
+        }
+        #toggleControls {
+            position: absolute;
+            top: 10px;
+            left: 220px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            border: 1px solid #666;
+            cursor: pointer;
+            transition: left 0.3s ease;
+        }
+        #toggleControls.hidden {
+            left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div id="controls">
+        <select id="cymaticsAlgo">
+            <option value="standing">Standing Wave</option>
+            <option value="radial">Radial Pulse</option>
+            <option value="spiral">Spiral Vortex</option>
+            <option value="harmonic">Harmonic Convergence</option>
+        </select>
+        <select id="fractalAlgo">
+            <option value="mandelbrot">Mandelbrot Set</option>
+            <option value="julia">Julia Set</option>
+            <option value="koch">Koch Snowflake</option>
+            <option value="sierpinski">Sierpinski Triangle</option>
+        </select>
+        <button id="startStop">Start</button>
+        <button id="reset">Reset</button>
+        <button id="viewMode">Toggle View</button>
+    </div>
+    <button id="toggleControls">≡</button>
+    <div id="info">Particles: <span id="particleCount">0</span></div>
+
+    <script>
+        let scene, camera, renderer, particles;
+        let isAnimating = false;
+        let viewFromTop = false;
+        const PARTICLE_COUNT = 3000;
+        const BOX_SIZE = 100;
+        const LAYERS = 3;
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000);
+            
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Create wireframe box
+            const boxGeometry = new THREE.BoxGeometry(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+            const edges = new THREE.EdgesGeometry(boxGeometry);
+            const box = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: 0xffffff }));
+            scene.add(box);
+
+            // Initialize particles
+            initializeParticles();
+
+            // Set initial camera position
+            camera.position.set(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+            camera.lookAt(0, 0, 0);
+
+            // Add event listeners
+            window.addEventListener('resize', onWindowResize, false);
+            setupTouchControls();
+            setupUIControls();
+
+            // Start animation loop
+            animate();
+        }
+
+        function initializeParticles() {
+            particles = new THREE.Group();
+            const colors = [0xff0000, 0x00ff00, 0x0000ff];
+            
+            for (let layer = 0; layer < LAYERS; layer++) {
+                const particleGeometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(PARTICLE_COUNT * 3);
+                
+                for (let i = 0; i < PARTICLE_COUNT; i++) {
+                    const idx = i * 3;
+                    positions[idx] = (Math.random() - 0.5) * BOX_SIZE * 0.8;
+                    positions[idx + 1] = (layer - 1) * (BOX_SIZE/4);
+                    positions[idx + 2] = (Math.random() - 0.5) * BOX_SIZE * 0.8;
+                }
+                
+                particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                
+                const particleMaterial = new THREE.PointsMaterial({
+                    color: colors[layer],
+                    size: 3.0,  // Increased particle size
+                    transparent: true,
+                    opacity: 0.8,
+                    blending: THREE.AdditiveBlending
+                });
+                
+                const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+                particles.add(particleSystem);
+            }
+            
+            scene.add(particles);
+            updateParticleCount();
+        }
+
+        function updateParticleCount() {
+            document.getElementById('particleCount').textContent = PARTICLE_COUNT * LAYERS;
+        }
+
+        const algorithms = {
+            standing: (particle, time) => {
+                particle.y = particle.originalY + Math.sin(time * 2 + particle.x) * 5;
+            },
+            radial: (particle, time) => {
+                const radius = Math.sqrt(particle.x * particle.x + particle.z * particle.z);
+                particle.y = particle.originalY + Math.sin(time * 2 - radius * 0.3) * 5;
+            },
+            spiral: (particle, time) => {
+                const angle = Math.atan2(particle.z, particle.x);
+                const radius = Math.sqrt(particle.x * particle.x + particle.z * particle.z);
+                particle.y = particle.originalY + Math.sin(time * 2 + angle * 3) * radius * 0.1;
+            },
+            harmonic: (particle, time) => {
+                particle.y = particle.originalY + 
+                    Math.sin(time * 2 + particle.x * 0.1) * 3 +
+                    Math.cos(time * 1.5 + particle.z * 0.1) * 3;
+            }
+        };
+
+        const fractalAlgorithms = {
+            mandelbrot: (particle, time) => {
+                const x = particle.x / BOX_SIZE;
+                const z = particle.z / BOX_SIZE;
+                const iterations = mandelbrotIteration(x, z);
+                particle.y += Math.sin(iterations + time) * 0.1;
+            },
+            julia: (particle, time) => {
+                const x = particle.x / BOX_SIZE;
+                const z = particle.z / BOX_SIZE;
+                const iterations = juliaIteration(x, z, time);
+                particle.y += Math.sin(iterations + time) * 0.1;
+            },
+            koch: (particle, time) => {
+                const angle = Math.atan2(particle.z, particle.x);
+                const kochFactor = Math.sin(angle * 3 + time);
+                particle.y += kochFactor * 0.1;
+            },
+            sierpinski: (particle, time) => {
+                const x = Math.abs(particle.x);
+                const z = Math.abs(particle.z);
+                const sierpinskiFactor = (x & z) / BOX_SIZE;
+                particle.y += sierpinskiFactor * Math.sin(time) * 0.5;
+            }
+        };
+
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (isAnimating) {
+                const time = performance.now() * 0.001;
+                const cymaticsType = document.getElementById('cymaticsAlgo').value;
+                const fractalType = document.getElementById('fractalAlgo').value;
+                
+                particles.children.forEach((particleSystem, layerIndex) => {
+                    const positions = particleSystem.geometry.attributes.position.array;
+                    
+                    for (let i = 0; i < positions.length; i += 3) {
+                        const particle = {
+                            x: positions[i],
+                            y: positions[i + 1],
+                            z: positions[i + 2],
+                            originalY: (layerIndex - 1) * (BOX_SIZE/4)
+                        };
+                        
+                        algorithms[cymaticsType](particle, time);
+                        fractalAlgorithms[fractalType](particle, time);
+                        
+                        positions[i + 1] = particle.y;
+                    }
+                    
+                    particleSystem.geometry.attributes.position.needsUpdate = true;
+                });
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        function setupUIControls() {
+            document.getElementById('startStop').addEventListener('click', function() {
+                isAnimating = !isAnimating;
+                this.textContent = isAnimating ? 'Stop' : 'Start';
+            });
+
+            document.getElementById('reset').addEventListener('click', function() {
+                scene.remove(particles);
+                initializeParticles();
+            });
+
+            document.getElementById('viewMode').addEventListener('click', function() {
+                viewFromTop = !viewFromTop;
+                if (viewFromTop) {
+                    camera.position.set(0, BOX_SIZE * 1.5, 0);
+                } else {
+                    camera.position.set(BOX_SIZE, BOX_SIZE, BOX_SIZE);
+                }
+                camera.lookAt(0, 0, 0);
+            });
+
+            const controls = document.getElementById('controls');
+            const toggleButton = document.getElementById('toggleControls');
+            toggleButton.addEventListener('click', function() {
+                controls.classList.toggle('hidden');
+                toggleButton.classList.toggle('hidden');
+                toggleButton.textContent = controls.classList.contains('hidden') ? '☰' : '×';
+            });
+        }
+
+        function setupTouchControls() {
+            let touchStartX = 0;
+            let touchStartY = 0;
+            let isRotating = false;
+
+            renderer.domElement.addEventListener('touchstart', function(event) {
+                if (event.touches.length === 1) {
+                    touchStartX = event.touches[0].clientX;
+                    touchStartY = event.touches[0].clientY;
+                    isRotating = true;
+                }
+            });
+
+            renderer.domElement.addEventListener('touchmove', function(event) {
+                if (isRotating && event.touches.length === 1) {
+                    const touchX = event.touches[0].clientX;
+                    const touchY = event.touches[0].clientY;
+                    
+                    const deltaX = (touchX - touchStartX) * 0.01;
+                    const deltaY = (touchY - touchStartY) * 0.01;
+                    
+                    camera.position.x = Math.cos(deltaX) * camera.position.x - Math.sin(deltaX) * camera.position.z;
+                    camera.position.z = Math.sin(deltaX) * camera.position.x + Math.cos(deltaX) * camera.position.z;
+                    
+                    camera.position.y += deltaY * 5;
+                    camera.lookAt(0, 0, 0);
+                    
+                    touchStartX = touchX;
+                    touchStartY = touchY;
+                }
+            });
+
+            renderer.domElement.addEventListener('touchend', function() {
+                isRotating = false;
+            });
+        }
+
+        function mandelbrotIteration(x0, y0) {
+            let x = 0, y = 0;
+            let iteration = 0;
+            const maxIteration = 20;
+            
+            while (x*x + y*y < 4 && iteration < maxIteration) {
+                const xTemp = x*x - y*y + x0;
+                y = 2*x*y + y0;
+                x = xTemp;
+                iteration++;
+            }
+            return iteration;
+        }
+
+        function juliaIteration(x, y, time) {
+            let iteration = 0;
+            const maxIteration = 20;
+            const cx = Math.sin(time * 0.1) * 0.7;
+            const cy = Math.cos(time * 0.1) * 0.3;
+            
+            while (x*x + y*y < 4 && iteration < maxIteration) {
+                const xTemp = x*x - y*y + cx;
+                y = 2*x*y + cy;
+                x = xTemp;
+                iteration++;
+            }
+            return iteration;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
